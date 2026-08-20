@@ -3,15 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Multiplayer Quiz Buzzer</title>
+  <title>Multiplayer Typing Quiz</title>
   <style>
     :root {
       --bg-color: #121212;
       --card-bg: #1e1e1e;
-      --accent: #bb86fc;
+      --accent: #00a884;
       --text: #e0e0e0;
-      --buzzer-red: #ff4444;
-      --buzzer-active: #cc0000;
+      --input-bg: #2a2a2a;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -25,24 +24,28 @@
     .scoreboard h3 { margin-bottom: 6px; font-size: 13px; color: #888; text-transform: uppercase; }
     .player-score-row { display: flex; justify-content: space-between; padding: 3px 0; }
 
-    .game-board { flex: 1; display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding: 30px 20px; text-align: center; }
+    .game-board { flex: 1; display: flex; flex-direction: column; justify-content: space-between; padding: 25px 20px; text-align: center; }
 
     .question-box { font-size: 20px; font-weight: 600; line-height: 1.4; margin-bottom: 10px; }
-    .status-msg { font-size: 16px; min-height: 24px; color: #ffb74d; font-weight: bold; }
+    .status-msg { font-size: 15px; min-height: 24px; color: #ffb74d; font-weight: bold; }
 
-    /* Giant Arcade Buzzer Button */
-    #buzzer-btn { width: 200px; height: 200px; border-radius: 50%; background: radial-gradient(circle, #ff6b6b 0%, var(--buzzer-red) 70%); border: 8px solid #ff8080; color: white; font-size: 28px; font-weight: bold; cursor: pointer; box-shadow: 0 10px 0 #990000, 0 15px 25px rgba(0,0,0,0.5); transition: transform 0.1s, box-shadow 0.1s; display: flex; align-items: center; justify-content: center; text-transform: uppercase; letter-spacing: 2px; }
-    #buzzer-btn:active:not(:disabled) { transform: translateY(8px); box-shadow: 0 2px 0 #990000, 0 5px 10px rgba(0,0,0,0.5); }
-    #buzzer-btn:disabled { background: #444; border-color: #555; color: #777; box-shadow: none; cursor: not-allowed; transform: translateY(8px); }
+    /* Typing Answer Section */
+    .answer-form { display: flex; gap: 8px; width: 100%; }
+    #answer-input { flex: 1; padding: 14px 16px; font-size: 16px; border: 2px solid #444; border-radius: 8px; background: var(--input-bg); color: var(--text); outline: none; }
+    #answer-input:focus { border-color: var(--accent); }
+    #answer-input:disabled { background: #222; color: #555; border-color: #333; }
 
-    .next-btn { padding: 12px 24px; background: var(--accent); color: #121212; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; width: 100%; transition: opacity 0.2s; }
-    .next-btn:hover { opacity: 0.9; }
+    .submit-btn { padding: 0 20px; background: var(--accent); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; }
+    .submit-btn:disabled { background: #444; color: #777; cursor: not-allowed; }
+
+    .next-btn { padding: 12px 24px; background: #444; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; width: 100%; transition: background 0.2s; }
+    .next-btn:hover { background: #555; }
   </style>
 </head>
 <body>
 
   <div id="game-container">
-    <header>🎮 Quiz Buzzer Battle</header>
+    <header>🧠 Typing Quiz Battle</header>
 
     <div class="scoreboard">
       <h3>Live Scoreboard</h3>
@@ -57,7 +60,10 @@
 
       <div id="announcement" class="status-msg"></div>
 
-      <button id="buzzer-btn" onclick="hitBuzzer()" disabled>BUZZ!</button>
+      <form id="answer-form" class="answer-form" onsubmit="submitAnswer(event)">
+        <input type="text" id="answer-input" autocomplete="off" placeholder="Type your answer..." required />
+        <button type="submit" id="submit-btn" class="submit-btn">Send</button>
+      </form>
 
       <button class="next-btn" onclick="nextQuestion()">Next Question ➡️</button>
     </div>
@@ -70,14 +76,20 @@
     
     socket.emit('join game', username);
 
-    const buzzerBtn = document.getElementById('buzzer-btn');
+    const answerInput = document.getElementById('answer-input');
+    const submitBtn = document.getElementById('submit-btn');
     const questionText = document.getElementById('question-text');
     const qNumber = document.getElementById('q-number');
     const announcement = document.getElementById('announcement');
     const playersList = document.getElementById('players-list');
 
-    function hitBuzzer() {
-      socket.emit('hit buzzer');
+    function submitAnswer(e) {
+      e.preventDefault();
+      const val = answerInput.value.trim();
+      if (val) {
+        socket.emit('submit answer', val);
+        answerInput.value = '';
+      }
     }
 
     function nextQuestion() {
@@ -96,18 +108,33 @@
       qNumber.textContent = `QUESTION ${data.questionNumber}`;
       questionText.textContent = data.questionText;
       announcement.textContent = '';
-      buzzerBtn.disabled = data.locked;
+      answerInput.disabled = data.roundOver;
+      submitBtn.disabled = data.roundOver;
+      answerInput.placeholder = "Type your answer...";
     });
 
-    socket.on('buzzer winner', (data) => {
-      buzzerBtn.disabled = true;
-      announcement.textContent = `🚨 ${data.name} buzzed first! Answer: ${data.answer}`;
+    socket.on('wrong answer notification', () => {
+      announcement.textContent = "❌ Incorrect! You are locked out of this question.";
+      answerInput.disabled = true;
+      submitBtn.disabled = true;
+    });
+
+    socket.on('round winner', (data) => {
+      answerInput.disabled = true;
+      submitBtn.disabled = true;
+      announcement.textContent = `🎉 Correct! ${data.name} won the point! Answer was: ${data.answer}`;
 
       let html = '';
       for (let id in data.players) {
         html += `<div class="player-score-row"><span>${data.players[id].name}</span> <strong>${data.players[id].score} pts</strong></div>`;
       }
       playersList.innerHTML = html;
+    });
+
+    socket.on('round draw', (data) => {
+      answerInput.disabled = true;
+      submitBtn.disabled = true;
+      announcement.textContent = `⚠️ Everyone got it wrong! No points awarded. Answer was: ${data.answer}`;
     });
   </script>
 </body>
