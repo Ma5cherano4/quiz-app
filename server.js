@@ -10,7 +10,7 @@ app.get('/', (req, res) => {
   res.sendFile(__dirname + '/index.html');
 });
 
-// --- 1,000 QUESTIONS GENERATOR ENGINE ---
+// 1,000 Questions Generator Engine
 function generate1000Questions() {
   const list = [
     { q: "What is the capital of France?", answer: "Paris" },
@@ -25,7 +25,6 @@ function generate1000Questions() {
     { q: "What year did the Titanic sink?", answer: "1912" }
   ];
 
-  // Procedurally expand to 1,000 unique questions using math & templates
   const capitals = [
     { c: "Germany", a: "Berlin" }, { c: "Italy", a: "Rome" }, { c: "Spain", a: "Madrid" },
     { c: "Canada", a: "Ottawa" }, { c: "Australia", a: "Canberra" }, { c: "Brazil", a: "Brasilia" },
@@ -37,7 +36,6 @@ function generate1000Questions() {
     list.push({ q: `What is the capital of ${item.c}?`, answer: item.a });
   });
 
-  // Generate 950+ dynamic math & science trivia questions
   for (let i = 1; i <= 500; i++) {
     let a = Math.floor(Math.random() * 50) + 1;
     let b = Math.floor(Math.random() * 50) + 1;
@@ -53,11 +51,11 @@ function generate1000Questions() {
 }
 
 const questions = generate1000Questions();
-console.log(`Loaded ${questions.length} questions successfully!`);
 
 let players = {};
-let buzzerLocked = false;
 let currentQuestionIndex = 0;
+let roundOver = false;
+let failedPlayers = {}; // Tracks who answered incorrectly for the current question
 
 io.on('connection', (socket) => {
   console.log('A player connected:', socket.id);
@@ -69,42 +67,69 @@ io.on('connection', (socket) => {
     socket.emit('new question', { 
       questionNumber: currentQuestionIndex + 1, 
       questionText: questions[currentQuestionIndex].q,
-      locked: buzzerLocked 
+      roundOver: roundOver
     });
   });
 
-  socket.on('hit buzzer', () => {
-    if (!buzzerLocked && players[socket.id]) {
-      buzzerLocked = true;
-      const winnerName = players[socket.id].name;
+  // Handle typed answer submissions
+  socket.on('submit answer', (answerText) => {
+    if (roundOver || !players[socket.id]) return;
+    
+    // If this player already failed this question, ignore them
+    if (failedPlayers[socket.id]) return;
+
+    const correctAnswer = questions[currentQuestionIndex].answer.trim().toLowerCase();
+    const userAns = answerText.trim().toLowerCase();
+
+    if (userAns === correctAnswer) {
+      // Correct! Player wins the point
+      roundOver = true;
       players[socket.id].score += 1;
 
-      io.emit('buzzer winner', {
-        name: winnerName,
-        players: players,
-        answer: questions[currentQuestionIndex].answer
+      io.emit('round winner', {
+        name: players[socket.id].name,
+        answer: questions[currentQuestionIndex].answer,
+        players: players
       });
+    } else {
+      // Incorrect! Lock this player out for this question
+      failedPlayers[socket.id] = true;
+      socket.emit('wrong answer notification');
+
+      // Check if ALL active players have now answered incorrectly
+      const activeIds = Object.keys(players);
+      const allFailed = activeIds.every(id => failedPlayers[id]);
+
+      if (allFailed && activeIds.length > 0) {
+        roundOver = true;
+        io.emit('round draw', {
+          answer: questions[currentQuestionIndex].answer,
+          players: players
+        });
+      }
     }
   });
 
   socket.on('next question', () => {
     currentQuestionIndex = (currentQuestionIndex + 1) % questions.length;
-    buzzerLocked = false;
+    roundOver = false;
+    failedPlayers = {}; // Reset failed attempts for the new question
 
     io.emit('new question', {
       questionNumber: currentQuestionIndex + 1,
       questionText: questions[currentQuestionIndex].q,
-      locked: false
+      roundOver: false
     });
   });
 
   socket.on('disconnect', () => {
     delete players[socket.id];
+    delete failedPlayers[socket.id];
     io.emit('update players', players);
   });
 });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`1000-Question Game Server running on port ${PORT}`);
+  console.log(`Quiz Server running on port ${PORT}`);
 });
